@@ -1,5 +1,7 @@
 import socket, threading, crypto, json, base64
 
+magic = "$#$#"
+
 class Node:
     def __init__(self, name, port, password=None):
         self.port = port
@@ -25,34 +27,37 @@ class Node:
 
 
     def handle_request(self, peer_socket):
-        packet = json.loads(peer_socket.recv(4096).decode("utf-8"))
+        packet = peer_socket.recv(4096).decode().split(magic)
         if not packet:
             return
-        for key, value in packet.items():
-            if key in ["pubkey", "signature"]:
-                packet[key] = base64.b64decode(value.encode("utf-8"))
-        if packet["header"] == "send":
+        # for key, value in packet.items():
+        #     if key in ["pubkey", "signature"]:
+        #         packet[key] = base64.b64decode(value.encode())
+        if packet[0] == "send":
             self.handle_send(packet, peer_socket)
-        elif packet["header"] == "register":
-            self.handle_register(packet, peer_socket)
+        elif packet[0] == "register":
+            self.handle_register(packet[1:], peer_socket)
         else:
-            peer_socket.send(json.dumps({"header": "response", "message": "Error: unknown header"}))
+            peer_socket.send(magic.join(["response", "Error: unknown header"]).encode())
             peer_socket.close()
 
 
     def handle_register(self, packet, peer_socket):
-        if crypto.verify_signature_with_public_key(packet["pubkey"], packet["name"], packet["signature"]):
-            self.peers.append({"name": packet["name"], "pubkey": packet["pubkey"], "port": packet["port"]})
+        name, pubkey, port, signature = packet
+        port = int(port)
+        if crypto.verify_signature_with_public_key(pubkey, name, signature):
+            self.peers.append({"name": name, "pubkey": pubkey, "port": port})
             print(f"{self.name}: I just registered a new guy:\n{self.peers[-1]}.\n")
-            peer_socket.send(json.dumps({"header": "response", "message": "Success: you got registered bro, happy minin'!"}).encode("utf-8"))
+            peer_socket.send(magic.join(["response", "Success: you got registered bro, happy minin'!"]).encode())
             # and now let everyone know about the new guy
         else:
-            peer_socket.send(json.dumps({"header": "response", "message": "Error: keys don't match, get lost hacker!"}).encode("utf-8"))
+            peer_socket.send(magic.join(["response", "Error: keys don't match, get lost hacker!"]).encode())
         peer_socket.close()
-    
+
 
     def handle_send(self, packet, peer_socket):
-        print(f"{self.name}: Received data from {packet['name']}\n{packet['data']}\n")
+        name, data = packet
+        print(f"{self.name}: Received data from {name}\n{data}\n")
         peer_socket.close()
 
 
@@ -75,17 +80,17 @@ class Node:
     def register(self, port):
         # send a packet with your name, public_key and your name signed with your private_key
         registering_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        packet = {
-            "header": "register",
-            "name": self.name,
-            "pubkey": base64.b64encode(self.pubkey).decode("utf-8"),
-            "port": self.port,
-            "signature": base64.b64encode(crypto.sign_with_private_key(self.privkey, self.name)).decode("utf-8")
-        }
+        packet = [
+            "register",
+            self.name,
+            self.pubkey.decode(),
+            str(self.port),
+            base64.b64encode(crypto.sign_with_private_key(self.privkey, self.name)).decode()
+        ]
         try:
             registering_socket.connect(("localhost", port))
-            registering_socket.send(json.dumps(packet).encode("utf-8"))
-            response = json.loads(registering_socket.recv(4096))
+            registering_socket.send(magic.join(packet).encode())
+            response = registering_socket.recv(4096).decode().split(magic)
             print(f"{self.name}: I got this response after registering:\n{response}\n")
         except Exception as e:
             print(f"Lost connection to peer when registering. {e}")

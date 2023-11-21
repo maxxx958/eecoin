@@ -2,6 +2,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
+import base64
 
 def generate_key_pair():
     private_key = rsa.generate_private_key(
@@ -55,11 +56,15 @@ def sign_with_private_key(private_key, data):
     return signature
 
 def verify_signature_with_public_key(public_key, data, signature):
+    public_key = base64.b64decode(public_key.encode())
+    data = data.encode()
+    signature = base64.b64decode(signature.encode())
     try:
         public_key = serialization.load_pem_public_key(public_key)
+        print("good")
         public_key.verify(
             signature,
-            data.encode('utf-8'),
+            data,
             padding.PSS(
                 mgf=padding.MGF1(hashes.SHA256()),
                 salt_length=padding.PSS.MAX_LENGTH
