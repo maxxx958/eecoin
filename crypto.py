@@ -56,15 +56,11 @@ def sign_with_private_key(private_key, data):
     return signature
 
 def verify_signature_with_public_key(public_key, data, signature):
-    public_key = base64.b64decode(public_key.encode())
-    data = data.encode()
-    signature = base64.b64decode(signature.encode())
     try:
-        public_key = serialization.load_pem_public_key(public_key)
-        print("good")
+        public_key = serialization.load_pem_public_key(public_key.encode())
         public_key.verify(
-            signature,
-            data,
+            base64.b64decode(signature.encode()),
+            data.encode(),
             padding.PSS(
                 mgf=padding.MGF1(hashes.SHA256()),
                 salt_length=padding.PSS.MAX_LENGTH
