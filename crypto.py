@@ -46,7 +46,7 @@ def decode_with_private_key(private_key, encoded_data):
 def sign_with_private_key(private_key, data):
     private_key = serialization.load_pem_private_key(private_key, None)
     signature = private_key.sign(
-        data.encode('utf-8'),
+        data.encode(),
         padding.PSS(
             mgf=padding.MGF1(hashes.SHA256()),
             salt_length=padding.PSS.MAX_LENGTH

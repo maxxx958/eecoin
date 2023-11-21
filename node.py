@@ -6,37 +6,38 @@ class Node:
     def __init__(self, name, port, password=None):
         self.port = port
         self.name = name
-        self.peers = []
         self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.privkey, self.pubkey = crypto.generate_key_pair()
+        self.pubkey = self.pubkey.decode()
+        self.peers = set()
+        self.peers.add((self.name, self.pubkey, self.port))
+        self.lock = threading.Lock()
     
 
     def start(self):
         self.listen_socket.bind(("localhost", self.port))
         self.listen_socket.listen(10)
-        print(f"Node {self.name} is listening on port {self.port}.")
+        print(f"[{self.name}] I'm is listening on port {self.port}.")
         threading.Thread(target=self.accept_connections).start()
 
 
     def accept_connections(self):
         while True:
             peer_socket, peer_address = self.listen_socket.accept()
-            print(f"{self.name}: Peer connected to me from {peer_address}")
-            self.peers.append(peer_socket)
+            print(f"[{self.name}] Peer connected to me from {peer_address}")
             threading.Thread(target=self.handle_request, args=(peer_socket,)).start()
 
 
     def handle_request(self, peer_socket):
-        packet = peer_socket.recv(4096).decode().split(magic)
+        packet = peer_socket.recv(16384).decode().split(magic)
         if not packet:
             return
-        # for key, value in packet.items():
-        #     if key in ["pubkey", "signature"]:
-        #         packet[key] = base64.b64decode(value.encode())
         if packet[0] == "send":
-            self.handle_send(packet, peer_socket)
+            self.handle_send(packet[1:], peer_socket)
         elif packet[0] == "register":
             self.handle_register(packet[1:], peer_socket)
+        elif packet[0] == "new_peer":
+            self.handle_pass_new_peer(packet[1:], peer_socket)
         else:
             peer_socket.send(magic.join(["response", "Error: unknown header"]).encode())
             peer_socket.close()
@@ -46,52 +47,104 @@ class Node:
         name, pubkey, port, signature = packet
         port = int(port)
         if crypto.verify_signature_with_public_key(pubkey, name, signature):
-            self.peers.append({"name": name, "pubkey": pubkey, "port": port})
-            print(f"{self.name}: I just registered a new guy:\n{self.peers[-1]}.\n")
-            peer_socket.send(magic.join(["response", "Success: you got registered bro, happy minin'!"]).encode())
-            # and now let everyone know about the new guy
+            peers_pack = ["Success"]
+            self.lock.acquire()
+            for peer in self.peers:
+                peers_pack += list(peer)
+                peers_pack[-2] = peers_pack[-2]
+                peers_pack[-1] = str(peers_pack[-1])
+            self.lock.release()
+            peer_socket.send(magic.join(peers_pack).encode())
+            self.pass_new_peer(name, pubkey, port)
         else:
-            peer_socket.send(magic.join(["response", "Error: keys don't match, get lost hacker!"]).encode())
+            peer_socket.send("Error: keys don't match, get lost hacker!".encode())
         peer_socket.close()
 
+    def handle_pass_new_peer(self, packet, peer_socket):
+        name, pubkey, port = packet
+        self.lock.acquire()
+        self.peers.add((name, pubkey, int(port)))
+        self.lock.release()
 
     def handle_send(self, packet, peer_socket):
-        name, data = packet
-        print(f"{self.name}: Received data from {name}\n{data}\n")
+        try:
+            name, data, signature = packet
+        except:
+            print(f"[{self.name}] Incorrect packet format.")
+        pubkey = None
+        self.lock.acquire()
+        for peer in self.peers:
+            p_name, p_pubkey, _ = peer
+            if p_name == name:
+                pubkey = p_pubkey
+                break
+        self.lock.release()
+        if crypto.verify_signature_with_public_key(pubkey, data, signature):
+            print(f"[{self.name}] Received data from {name}\n{data}")
+        else:
+            print(f"[{self.name}] Incorrect signature, can't verify the message from {name}.")
         peer_socket.close()
-
 
     def send(self, data, port):
         connecting_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        packet = {
-            "header": "send",
-            "name": self.name,
-            "data": data,
-            "signature": crypto.sign_with_private_key(data, self.privkey)
-        }
+        packet = [
+            "send",
+            self.name,
+            data,
+            base64.b64encode(crypto.sign_with_private_key(self.privkey, data)).decode()
+        ]
         try:
             connecting_socket.connect(("localhost", port))
-            connecting_socket.send(json.dumps(packet))
-        except:
-            print("Lost connection to peer when sending data.")
+            connecting_socket.send(magic.join(packet).encode())
+        except Exception as e:
+            print(f"[{self.name}] Lost connection to peer when sending data {e}.")
         connecting_socket.close()
+
+    def pass_new_peer(self, name, pubkey, port):
+        self.lock.acquire()
+        for peer in self.peers:
+            _, _, p_port = peer
+            connecting_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            packet = [
+                "new_peer",
+                name,
+                pubkey,
+                str(port)
+            ]
+            try:
+                connecting_socket.connect(("localhost", p_port))
+                connecting_socket.send(magic.join(packet).encode())
+            except Exception as e:
+                print(f"[{self.name}] Couldn't pass new peer {e}.")
+            connecting_socket.close()
+        self.lock.release()
 
 
     def register(self, port):
-        # send a packet with your name, public_key and your name signed with your private_key
         registering_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         packet = [
             "register",
             self.name,
-            self.pubkey.decode(),
+            self.pubkey,
             str(self.port),
             base64.b64encode(crypto.sign_with_private_key(self.privkey, self.name)).decode()
         ]
         try:
             registering_socket.connect(("localhost", port))
             registering_socket.send(magic.join(packet).encode())
-            response = registering_socket.recv(4096).decode().split(magic)
-            print(f"{self.name}: I got this response after registering:\n{response}\n")
+            response = registering_socket.recv(16384).decode().split(magic)
+            if response[0] == "Success":
+                response = response[1:]
+                for i in range(0, len(response), 3):
+                    peer = response[i : i + 3]
+                    peer[1] = peer[1]
+                    peer[2] = int(peer[2])
+                    self.lock.acquire()
+                    self.peers.add(tuple(peer))
+                    self.lock.release()
+                    print(f"[{self.name}] I'm adding {peer[0]} to my peers.")
+            else:
+                print(f"[{self.name}] {response[0]}")
         except Exception as e:
-            print(f"Lost connection to peer when registering. {e}")
+            print(f"[{self.name}] Lost connection to peer when registering {e}.")
         registering_socket.close()
