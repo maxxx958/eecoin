@@ -1,0 +1,13 @@
+block structure:
+    previous_hash + "one eecoin for me" + proof_of_work
+
+proof_of_work is a random number that is added at the end of the block to make it's hash have exactly 30 (or x) zeros at the beginning.
+
+to verify if the block is correct you can just hash it and count zeros at the beginning
+
+to verify if the block is successor of some other block you just have to check is the previous_hash matches the last block
+
+how can some other block be faster than us if we start looking sooner than he does?
+(just randomize looking for the blocks, don't jsut iterate over the range)
+
+everyone should start looking immidiately after receiving the block
