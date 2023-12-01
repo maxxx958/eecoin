@@ -1,6 +1,7 @@
 import socket, threading, crypto, base64, blockchain
 
 magic = "$#$#"
+verbose = False
 
 class Node:
     def __init__(self, name, port, password=None):
@@ -19,7 +20,8 @@ class Node:
     def start(self):
         self.listen_socket.bind(("localhost", self.port))
         self.listen_socket.listen(10)
-        print(f"[{self.name}] I'm listening on port {self.port}.")
+        if verbose:
+            print(f"[{self.name}] I'm listening on port {self.port}.")
         threading.Thread(target=self.accept_connections).start()
         threading.Thread(target=self.chain.mine).start()
 
@@ -27,7 +29,8 @@ class Node:
     def accept_connections(self):
         while True:
             peer_socket, peer_address = self.listen_socket.accept()
-            print(f"[{self.name}] Peer connected to me from {peer_address}")
+            if verbose:
+                print(f"[{self.name}] Peer connected to me from {peer_address}")
             threading.Thread(target=self.handle_request, args=(peer_socket,)).start()
 
 
@@ -37,10 +40,12 @@ class Node:
             return
         if packet[0] == "new_block":
             self.handle_send_new_block(packet[1:], peer_socket)
+        elif packet[0] == "blocks":
+            self.handle_send_blocks(packet[1:], peer_socket)
         elif packet[0] == "register":
             self.handle_register(packet[1:], peer_socket)
         elif packet[0] == "new_peer":
-            self.handle_pass_new_peer(packet[1:], peer_socket)
+            self.handle_pass_new_peer(packet[1:])
         else:
             peer_socket.send(magic.join(["response", "Error: unknown header"]).encode())
             peer_socket.close()
@@ -54,16 +59,16 @@ class Node:
             self.lock.acquire()
             for peer in self.peers:
                 peers_pack += list(peer)
-                peers_pack[-2] = peers_pack[-2]
                 peers_pack[-1] = str(peers_pack[-1])
             self.lock.release()
             peer_socket.send(magic.join(peers_pack).encode())
             self.pass_new_peer(name, pubkey, port)
+            self.send_blocks(port)
         else:
             peer_socket.send("Error: keys don't match, get lost hacker!".encode())
         peer_socket.close()
 
-    def handle_pass_new_peer(self, packet, peer_socket):
+    def handle_pass_new_peer(self, packet):
         name, pubkey, port = packet
         self.lock.acquire()
         self.peers.add((name, pubkey, int(port)))
@@ -83,7 +88,29 @@ class Node:
                 break
         self.lock.release()
         if crypto.verify_signature_with_public_key(pubkey, data, signature):
-            print(f"[{self.name}] Received data from {name}\n{data}")
+            if verbose:
+                print(f"[{self.name}] Received data from {name}\n{data}")
+            self.chain.load_block_from_string(data)
+        else:
+            print(f"[{self.name}] Incorrect signature, can't verify the message from {name}.")
+        peer_socket.close()
+    
+    def handle_send_blocks(self, packet, peer_socket):
+        try:
+            name, data, signature = packet
+        except:
+            print(f"[{self.name}] Incorrect packet format.")
+        pubkey = None
+        self.lock.acquire()
+        for peer in self.peers:
+            p_name, p_pubkey, _ = peer
+            if p_name == name:
+                pubkey = p_pubkey
+                break
+        self.lock.release()
+        if crypto.verify_signature_with_public_key(pubkey, data, signature):
+            if verbose:
+                print(f"[{self.name}] Received data from {name}\n{data}")
             self.chain.load_blocks_from_string(data)
         else:
             print(f"[{self.name}] Incorrect signature, can't verify the message from {name}.")
@@ -108,6 +135,22 @@ class Node:
         for name, _, port in self.peers:
             if name != self.name:
                 self.send_new_block(data, port)
+    
+    def send_blocks(self, port):
+        connecting_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        data = self.chain.blocks_to_string()
+        packet = [
+            "blocks",
+            self.name,
+            data,
+            base64.b64encode(crypto.sign_with_private_key(self.privkey, data)).decode()
+        ]
+        try:
+            connecting_socket.connect(("localhost", port))
+            connecting_socket.send(magic.join(packet).encode())
+        except Exception as e:
+            print(f"[{self.name}] Lost connection to peer when sending data {e}.")
+        connecting_socket.close()
 
     def pass_new_peer(self, name, pubkey, port):
         self.lock.acquire()
@@ -146,12 +189,12 @@ class Node:
                 response = response[1:]
                 for i in range(0, len(response), 3):
                     peer = response[i : i + 3]
-                    peer[1] = peer[1]
                     peer[2] = int(peer[2])
                     self.lock.acquire()
                     self.peers.add(tuple(peer))
                     self.lock.release()
-                    print(f"[{self.name}] I'm adding {peer[0]} to my peers.")
+                    if verbose:
+                        print(f"[{self.name}] I'm adding {peer[0]} to my peers.")
             else:
                 print(f"[{self.name}] {response[0]}")
         except Exception as e:

@@ -26,28 +26,40 @@ class Blockchain:
         times = 0
         while True:
             proof_of_work = str(random.randrange(2**64))
-            new_block = magic.join([hash(self.blocks[-1]) + "one eecoin for me" + proof_of_work])
+            new_block = magic.join([hash(self.blocks[-1]), "one eecoin for me", proof_of_work])
             times += 1
             if self.valid(new_block):
                 self.blocks.append(new_block)
-                self.propagate()
-                print(f"[{self.node.name}] I just mined a new block ", hash(new_block), times)
+                self.node.broadcast_new_block(self.block_to_string())
+                print(f"[{self.node.name}]\tI just mined a new block ", hash(new_block), times)
                 times = 0
                 time.sleep(1)
-
-    def propagate(self):
-        self.node.broadcast_new_block(self.blocks_to_string())
 
     def blocks_to_string(self):
         return base64.b64encode(pickle.dumps(self.blocks)).decode()
 
+    def block_to_string(self):
+        return base64.b64encode(pickle.dumps(self.blocks[-1])).decode()
+
     def load_blocks_from_string(self, string):
         new_blocks = pickle.loads(base64.b64decode(string))
-        if len(new_blocks) == len(self.blocks) + 1 and new_blocks[-2] == self.blocks[-1]:
+        self.blocks = new_blocks
+        print(f"[{self.node.name}]\tI'm accepting the new chain as I'm new here and I know nothing :P.")
+        return
+        if len(new_blocks) >= len(self.blocks) and new_blocks[:len(self.blocks)] == self.blocks:
             self.blocks = new_blocks
-            print("I'm accepting the new block as it is building on what I already have")
+            print(f"[{self.node.name}]\tI'm accepting the new chain as it is longer version of what I already have.")
         else:
-            print("This new chain is bullshit")
+            print(f"[{self.node.name}]\tThis new chain is bullshit.")
+    
+    def load_block_from_string(self, string):
+        new_block = pickle.loads(base64.b64decode(string))
+        prev_hash = new_block.split(magic)[0]
+        if prev_hash == hash(self.blocks[-1]):
+            self.blocks.append(new_block)
+            print(f"[{self.node.name}]\tI'm accepting the new block as it is building on what I already have.")
+        else:
+            print(f"[{self.node.name}]\tERROR: This new block is bullshit.")
 
 # b1 = Blockchain()
 # b1.blocks = [1, 2, 3]

@@ -27,6 +27,7 @@ import time
 
 node_max = Node("max", 12345)
 node_max.start()
+time.sleep(5)
 node_max2 = Node("max2", 12346)
 node_max2.start()
 node_max2.register(12345)
