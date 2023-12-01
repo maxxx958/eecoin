@@ -1,4 +1,4 @@
-import socket, threading, crypto, json, base64
+import socket, threading, crypto, base64, blockchain
 
 magic = "$#$#"
 
@@ -12,13 +12,16 @@ class Node:
         self.peers = set()
         self.peers.add((self.name, self.pubkey, self.port))
         self.lock = threading.Lock()
+        self.chain = blockchain.Blockchain(self)
+        
     
 
     def start(self):
         self.listen_socket.bind(("localhost", self.port))
         self.listen_socket.listen(10)
-        print(f"[{self.name}] I'm is listening on port {self.port}.")
+        print(f"[{self.name}] I'm listening on port {self.port}.")
         threading.Thread(target=self.accept_connections).start()
+        threading.Thread(target=self.chain.mine).start()
 
 
     def accept_connections(self):
@@ -32,8 +35,8 @@ class Node:
         packet = peer_socket.recv(16384).decode().split(magic)
         if not packet:
             return
-        if packet[0] == "send":
-            self.handle_send(packet[1:], peer_socket)
+        if packet[0] == "new_block":
+            self.handle_send_new_block(packet[1:], peer_socket)
         elif packet[0] == "register":
             self.handle_register(packet[1:], peer_socket)
         elif packet[0] == "new_peer":
@@ -66,7 +69,7 @@ class Node:
         self.peers.add((name, pubkey, int(port)))
         self.lock.release()
 
-    def handle_send(self, packet, peer_socket):
+    def handle_send_new_block(self, packet, peer_socket):
         try:
             name, data, signature = packet
         except:
@@ -81,14 +84,15 @@ class Node:
         self.lock.release()
         if crypto.verify_signature_with_public_key(pubkey, data, signature):
             print(f"[{self.name}] Received data from {name}\n{data}")
+            self.chain.load_blocks_from_string(data)
         else:
             print(f"[{self.name}] Incorrect signature, can't verify the message from {name}.")
         peer_socket.close()
 
-    def send(self, data, port):
+    def send_new_block(self, data, port):
         connecting_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         packet = [
-            "send",
+            "new_block",
             self.name,
             data,
             base64.b64encode(crypto.sign_with_private_key(self.privkey, data)).decode()
@@ -99,6 +103,11 @@ class Node:
         except Exception as e:
             print(f"[{self.name}] Lost connection to peer when sending data {e}.")
         connecting_socket.close()
+    
+    def broadcast_new_block(self, data):
+        for name, _, port in self.peers:
+            if name != self.name:
+                self.send_new_block(data, port)
 
     def pass_new_peer(self, name, pubkey, port):
         self.lock.acquire()
