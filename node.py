@@ -4,7 +4,7 @@ magic = "$#$#"
 verbose = False
 
 class Node:
-    def __init__(self, name, port, password=None):
+    def __init__(self, name, port, password=None, miner=True):
         self.port = port
         self.name = name
         self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -14,16 +14,17 @@ class Node:
         self.peers.add((self.name, self.pubkey, self.port))
         self.lock = threading.Lock()
         self.chain = blockchain.Blockchain(self)
+        self.miner = miner
         
     
-
     def start(self):
         self.listen_socket.bind(("localhost", self.port))
         self.listen_socket.listen(10)
         if verbose:
             print(f"[{self.name}] I'm listening on port {self.port}.")
         threading.Thread(target=self.accept_connections).start()
-        threading.Thread(target=self.chain.mine).start()
+        if self.miner:
+            threading.Thread(target=self.chain.mine, args=(self.lock,)).start()
 
 
     def accept_connections(self):
@@ -42,6 +43,8 @@ class Node:
             self.handle_send_new_block(packet[1:], peer_socket)
         elif packet[0] == "blocks":
             self.handle_send_blocks(packet[1:], peer_socket)
+        elif packet[0] == "transaction":
+            self.handle_send_transaction(packet[1:], peer_socket)
         elif packet[0] == "register":
             self.handle_register(packet[1:], peer_socket)
         elif packet[0] == "new_peer":
@@ -95,6 +98,27 @@ class Node:
             print(f"[{self.name}] Incorrect signature, can't verify the message from {name}.")
         peer_socket.close()
     
+    def handle_send_transaction(self, packet, peer_socket):
+        try:
+            name, data, signature = packet
+        except:
+            print(f"[{self.name}] Incorrect packet format.")
+        pubkey = None
+        self.lock.acquire()
+        for peer in self.peers:
+            p_name, p_pubkey, _ = peer
+            if p_name == name:
+                pubkey = p_pubkey
+                break
+        self.lock.release()
+        if crypto.verify_signature_with_public_key(pubkey, data, signature):
+            if verbose:
+                print(f"[{self.name}] Received data from {name}\n{data}")
+            self.chain.receive_transaction(data)
+        else:
+            print(f"[{self.name}] Incorrect signature, can't verify the message from {name}.")
+        peer_socket.close()
+    
     def handle_send_blocks(self, packet, peer_socket):
         try:
             name, data, signature = packet
@@ -132,9 +156,11 @@ class Node:
         connecting_socket.close()
     
     def broadcast_new_block(self, data):
+        self.lock.acquire()
         for name, _, port in self.peers:
             if name != self.name:
                 self.send_new_block(data, port)
+        self.lock.release()
     
     def send_blocks(self, port):
         connecting_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -200,3 +226,24 @@ class Node:
         except Exception as e:
             print(f"[{self.name}] Lost connection to peer when registering {e}.")
         registering_socket.close()
+    
+    def send_transaction(self, content, port):
+        connecting_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        packet = [
+            "transaction",
+            self.name,
+            content,
+            base64.b64encode(crypto.sign_with_private_key(self.privkey, content)).decode()
+        ]
+        try:
+            connecting_socket.connect(("localhost", port))
+            connecting_socket.send(magic.join(packet).encode())
+        except Exception as e:
+            print(f"[{self.name}] Lost connection to peer when sending transaction {e}.")
+        connecting_socket.close()
+
+    def broadcast_transaction(self, content):
+        self.lock.acquire()
+        for _, _, port in self.peers:
+            self.send_transaction(content, port)
+        self.lock.release()
