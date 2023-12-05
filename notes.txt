@@ -11,3 +11,16 @@ how can some other block be faster than us if we start looking sooner than he do
 (just randomize looking for the blocks, don't jsut iterate over the range)
 
 everyone should start looking immidiately after receiving the block
+
+
+
+
+
+
+
+MAYBE
+
+if someone received enough transactions (first x of them) then he starts looking for the ~proof_of_work~
+but then, how do we number transactions? should we even bother coming up with the system or just assume that
+these come already numbered and just number them in our tests?
+

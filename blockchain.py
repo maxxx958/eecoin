@@ -1,6 +1,6 @@
 import pickle, base64, random, hashlib, time
 magic = "$#$#"
-difficulty = 5
+difficulty = 6
 block_size = 5
 
 def hash(string):
@@ -10,12 +10,14 @@ def hash(string):
 
 class Blockchain:
     def __init__(self, node):
-        self.blocks = ["the starting block"]
+        self.blocks = [magic.join(["0", "system system 0.0", "0"])]
         self.transactions = []
+        # self.transactions = ["system max 1000.0", "system max2 1000.0"]
         self.node = node
         random.seed(self.node.name)
+        self.wallets = {"system": 0.0, "max": 1000.0, "max2": 1000.0}
     
-    def mine(self, lock):
+    def mine(self):
         while True:
             self.try_to_add_block()
 
@@ -25,7 +27,7 @@ class Blockchain:
         return False
 
     def receive_transaction(self, transaction):
-        print(f"[{self.node.name}] Got it!")
+        # print(f"[{self.node.name}] Got it!")
         self.transactions.append(transaction)
 
     def try_to_add_block(self):
@@ -38,6 +40,8 @@ class Blockchain:
                 self.blocks.append(new_block)
                 self.node.broadcast_new_block(self.block_to_string())
                 print(f"[{self.node.name}]\tI just mined a new block ", hash(new_block), times)
+                self.update_wallets(new_block)
+                print("wallets:", self.wallets)
                 times = 0
                 self.transactions = self.transactions[block_size:]
                 time.sleep(1)
@@ -48,9 +52,21 @@ class Blockchain:
     def block_to_string(self):
         return base64.b64encode(pickle.dumps(self.blocks[-1])).decode()
 
+    def update_wallets(self, block):
+        for transaction in block.split(magic)[1:-1]:
+            sender, recipient, amount = transaction.split()
+            amount = float(amount)
+            if sender == "system" or self.wallets.get(sender, 0) >= amount:
+                self.wallets[recipient] = self.wallets.get(recipient, 0) + amount
+                self.wallets[sender] -= amount
+            else:
+                raise Exception(f"Sender ({sender}) has insufficient funds for this transaction.")
+
     def load_blocks_from_string(self, string):
         new_blocks = pickle.loads(base64.b64decode(string))
         self.blocks = new_blocks
+        for block in self.blocks:
+            self.update_wallets(block)
         print(f"[{self.node.name}]\tI'm accepting the new chain as I'm new here and I know nothing :P.")
         return
         if len(new_blocks) >= len(self.blocks) and new_blocks[:len(self.blocks)] == self.blocks:
@@ -61,6 +77,7 @@ class Blockchain:
     
     def load_block_from_string(self, string):
         new_block = pickle.loads(base64.b64decode(string))
+        self.update_wallets(new_block)
         for transaction in new_block.split(magic)[1:-2]:
             self.transactions.remove(transaction)
         prev_hash = new_block.split(magic)[0]

@@ -24,7 +24,7 @@ class Node:
             print(f"[{self.name}] I'm listening on port {self.port}.")
         threading.Thread(target=self.accept_connections).start()
         if self.miner:
-            threading.Thread(target=self.chain.mine, args=(self.lock,)).start()
+            threading.Thread(target=self.chain.mine).start()
 
 
     def accept_connections(self):
@@ -77,11 +77,7 @@ class Node:
         self.peers.add((name, pubkey, int(port)))
         self.lock.release()
 
-    def handle_send_new_block(self, packet, peer_socket):
-        try:
-            name, data, signature = packet
-        except:
-            print(f"[{self.name}] Incorrect packet format.")
+    def verify_data(self, name, data, signature):
         pubkey = None
         self.lock.acquire()
         for peer in self.peers:
@@ -90,28 +86,27 @@ class Node:
                 pubkey = p_pubkey
                 break
         self.lock.release()
-        if crypto.verify_signature_with_public_key(pubkey, data, signature):
+        return crypto.verify_signature_with_public_key(pubkey, data, signature)
+
+    def handle_send_new_block(self, packet, peer_socket):
+        try:
+            name, data, signature = packet
+        except:
+            print(f"[{self.name}] Incorrect packet format.")
+        if self.verify_data(name, data, signature):
             if verbose:
                 print(f"[{self.name}] Received data from {name}\n{data}")
             self.chain.load_block_from_string(data)
         else:
             print(f"[{self.name}] Incorrect signature, can't verify the message from {name}.")
         peer_socket.close()
-    
+
     def handle_send_transaction(self, packet, peer_socket):
         try:
             name, data, signature = packet
         except:
             print(f"[{self.name}] Incorrect packet format.")
-        pubkey = None
-        self.lock.acquire()
-        for peer in self.peers:
-            p_name, p_pubkey, _ = peer
-            if p_name == name:
-                pubkey = p_pubkey
-                break
-        self.lock.release()
-        if crypto.verify_signature_with_public_key(pubkey, data, signature):
+        if self.verify_data(name, data, signature):
             if verbose:
                 print(f"[{self.name}] Received data from {name}\n{data}")
             self.chain.receive_transaction(data)
@@ -124,15 +119,7 @@ class Node:
             name, data, signature = packet
         except:
             print(f"[{self.name}] Incorrect packet format.")
-        pubkey = None
-        self.lock.acquire()
-        for peer in self.peers:
-            p_name, p_pubkey, _ = peer
-            if p_name == name:
-                pubkey = p_pubkey
-                break
-        self.lock.release()
-        if crypto.verify_signature_with_public_key(pubkey, data, signature):
+        if self.verify_data(name, data, signature):
             if verbose:
                 print(f"[{self.name}] Received data from {name}\n{data}")
             self.chain.load_blocks_from_string(data)

@@ -33,18 +33,43 @@ node_max2.start()
 node_max2.register(12345)
 time.sleep(1)
 node_max.broadcast_transaction("max max2 1.0")
-node_max2.broadcast_transaction("max max2 2.0")
+node_max2.broadcast_transaction("max2 max 2.0")
 node_max.broadcast_transaction("max max2 3.0")
-node_max2.broadcast_transaction("max max2 4.0")
+node_max2.broadcast_transaction("max2 max 4.0")
 node_max.broadcast_transaction("max max2 5.0")
-node_max2.broadcast_transaction("max max2 6.0")
+node_max2.broadcast_transaction("max2 max 6.0")
 node_max.broadcast_transaction("max max2 7.0")
-node_max2.broadcast_transaction("max max2 8.0")
+node_max2.broadcast_transaction("max2 max 8.0")
 node_max.broadcast_transaction("max max2 9.0")
-node_max2.broadcast_transaction("max max2 10.0")
-node_max2.broadcast_transaction("max max2 11.0")
+node_max2.broadcast_transaction("max2 max 10.0")
+node_max2.broadcast_transaction("max2 max 11.0")
 time.sleep(10)
-print(node_max2.chain.transactions)
-print(node_max.chain.transactions)
-print(node_max.chain.blocks)
+print("nodes in max:\t\t", node_max.chain.transactions)
+print("nodes in max2:\t\t", node_max2.chain.transactions)
+print("current blockchain:\t", node_max.chain.blocks)
+print()
+time.sleep(25)
+print("nodes in max:\t\t", node_max.chain.transactions)
+print("nodes in max2:\t\t", node_max2.chain.transactions)
+print("current blockchain:\t", node_max.chain.blocks)
 
+
+'''
+OUTPUT:
+
+$ python test.py
+[max2]  I'm accepting the new chain as I'm new here and I know nothing :P.
+[max2]  I just mined a new block  0000001d970e440955f0a91b64b3e771663decc68e98acba4e9644874c491c80 3138313
+wallets: {'system': -1.0, 'max': 997.0, 'max2': 1004.0}
+[max]   I'm accepting the new block as it is building on what I already have.
+nodes in max:            ['max2 max 6.0', 'max max2 7.0', 'max max2 9.0', 'max2 max 8.0', 'max2 max 10.0', 'max2 max 11.0']
+nodes in max2:           ['max2 max 6.0', 'max max2 7.0', 'max2 max 8.0', 'max max2 9.0', 'max2 max 10.0', 'max2 max 11.0']
+current blockchain:      ['0$#$#system system 0.0$#$#0', '6828ce56d978f07d7374fecbcb49ead6defe63a1016e9b89fcead171d7c97808$#$#max max2 1.0$#$#max2 max 2.0$#$#max max2 3.0$#$#max2 max 4.0$#$#max max2 5.0$#$#system max2 1.0$#$#12202259370478495191']
+
+[max2]  I just mined a new block  0000006c94b4be1a4ce7621bea5b8ffcd6c4732363d51f2f42dde7baf108afe0 8428859
+wallets: {'system': -2.0, 'max': 1005.0, 'max2': 997.0}
+[max]   I'm accepting the new block as it is building on what I already have.
+nodes in max:            ['max2 max 11.0']
+nodes in max2:           ['max2 max 11.0']
+current blockchain:      ['0$#$#system system 0.0$#$#0', '6828ce56d978f07d7374fecbcb49ead6defe63a1016e9b89fcead171d7c97808$#$#max max2 1.0$#$#max2 max 2.0$#$#max max2 3.0$#$#max2 max 4.0$#$#max max2 5.0$#$#system max2 1.0$#$#12202259370478495191', '0000001d970e440955f0a91b64b3e771663decc68e98acba4e9644874c491c80$#$#max2 max 6.0$#$#max max2 7.0$#$#max2 max 8.0$#$#max max2 9.0$#$#max2 max 10.0$#$#system max2 1.0$#$#5319397853656594559']
+'''
