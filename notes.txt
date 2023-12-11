@@ -24,3 +24,12 @@ if someone received enough transactions (first x of them) then he starts looking
 but then, how do we number transactions? should we even bother coming up with the system or just assume that
 these come already numbered and just number them in our tests?
 
+
+
+dopisać podpisy do transakcji w blokach
+dołączać do bloku tylko te transakcje które mają prawo zostać wykonane - jest wystarczające saldo sendera, a pozostałe zostawiamy na później
+słownik z adresami portfeli dla node'ów i nazwami czytelnymi dla człowieka
+rozsyłam blok jak dostanę i są nowe, a jak już taki mam to wtedy nie rozsyłam dalej
+
+
+jeśli odbiorę blok i nie pasuje mi do niczego co mam do tej pory to dopytuje o resztę bloków
