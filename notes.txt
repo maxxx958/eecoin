@@ -26,10 +26,22 @@ these come already numbered and just number them in our tests?
 
 
 
+
+
+
+
+
+
+
+
+
+
 dopisać podpisy do transakcji w blokach
-dołączać do bloku tylko te transakcje które mają prawo zostać wykonane - jest wystarczające saldo sendera, a pozostałe zostawiamy na później
-słownik z adresami portfeli dla node'ów i nazwami czytelnymi dla człowieka
-rozsyłam blok jak dostanę i są nowe, a jak już taki mam to wtedy nie rozsyłam dalej
 
++ dołączać do bloku tylko te transakcje które mają prawo zostać wykonane - jest wystarczające saldo sendera, a pozostałe zostawiamy na później
 
-jeśli odbiorę blok i nie pasuje mi do niczego co mam do tej pory to dopytuje o resztę bloków
++ słownik z adresami portfeli dla node'ów i nazwami czytelnymi dla człowieka
+
++ rozsyłam blok jak dostanę i są nowe, a jak już taki mam to wtedy nie rozsyłam dalej
+
++ jeśli odbiorę blok i nie pasuje mi do niczego co mam do tej pory to dopytuje o resztę bloków
