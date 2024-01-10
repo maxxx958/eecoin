@@ -263,7 +263,8 @@ class Node:
         try:
             connecting_socket.connect(("localhost", port))
             connecting_socket.send(magic.join(packet).encode())
-            print("just asked", port, "for more blocks")
+            if verbose:
+                print(f"[{self.name}]\tI just asked", port, "for more blocks.")
         except Exception as e:
             print(f"[{self.name}]\tLost connection to peer when asking for more blocks {e}.")
             return
