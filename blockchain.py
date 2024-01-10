@@ -2,6 +2,7 @@ import pickle, base64, random, hashlib, time, threading, binascii
 magic = "$#$#"
 difficulty = 20
 block_size = 5
+max_len_diff = 5
 
 def hash(string):
     sha256_hash = hashlib.sha256()
@@ -10,12 +11,11 @@ def hash(string):
 
 class Blockchain:
     def __init__(self, node):
-        self.blocks = [magic.join(["0", "system system 0.0", "0"])]
-        self.transactions = []
+        self.chains = [[magic.join(["0", "system system 0.0", "0"])]]
+        self.transactions = set()
         self.node = node
         self.lock = node.lock
         random.seed(self.node.name)
-        self.wallets = {"system": 0.0}
     
     def mine(self):
         while True:
@@ -29,105 +29,113 @@ class Blockchain:
         return False
 
     def receive_transaction(self, transaction):
-        # print(f"[{self.node.name}] Got it!")
-        self.transactions.append(transaction)
+        if transaction not in self.transactions:
+            self.transactions.add(transaction)
 
-    def pick_transactions(self):
-        new_wallets = dict(self.wallets)
-        possible_transactions = []
+    def pick_transactions(self, chain):
+        wallets = {"system": 0.0}
+        processed_transactions = set()
+        for block in chain:
+            for transaction in block.split(magic)[1:-1]:
+                if len(transaction) == 0:
+                    continue
+                processed_transactions.add(transaction)
+                sender, recipient, amount = transaction.split()
+                amount = float(amount)
+                if sender == "system" or wallets.get(sender, 0) >= amount:
+                    wallets[recipient] = wallets.get(recipient, 0) + amount
+                    wallets[sender] -= amount
+                else:
+                    raise Exception(f"Sender ({sender}) has insufficient funds for this transaction.")
+        possible_transactions = set()
         with self.lock:
             for transaction in self.transactions:
+                if transaction in processed_transactions:
+                    continue
                 sender, receiver, amount = transaction.split()
                 amount = float(amount)
-                if new_wallets.get(sender, 0) >= amount:
-                    new_wallets[receiver] = new_wallets.get(receiver, 0) + amount
-                    new_wallets[sender] -= amount
-                    possible_transactions.append(transaction)
+                if wallets.get(sender, 0) >= amount:
+                    wallets[receiver] = wallets.get(receiver, 0) + amount
+                    wallets[sender] -= amount
+                    possible_transactions.add(transaction)
                     if len(possible_transactions) == block_size:
                         return possible_transactions
-        return possible_transactions
-
+        return list(possible_transactions)
 
     def try_to_add_block(self):
         times = 0
         while True:
+            longest_idx = 0
+            for i in range(len(self.chains)):
+                if len(self.chains[i]) > len(self.chains[longest_idx]):
+                    longest_idx = i
             proof_of_work = str(random.randrange(2**64))
-            new_block = magic.join([hash(self.blocks[-1]), magic.join(self.pick_transactions()), f"system {hash(self.node.pubkey)} 10.0", proof_of_work])
+            new_block = magic.join([hash(self.chains[longest_idx][-1]), magic.join(self.pick_transactions(self.chains[longest_idx])), f"system {hash(self.node.pubkey)} 10.0", proof_of_work])
             times += 1
             if self.valid(new_block):
-                self.blocks.append(new_block)
+                print(f"[{self.node.name}]\tmined one lol")
+                self.chains[longest_idx].append(new_block)
                 self.node.broadcast_new_block(self.block_to_string(new_block))
-                print(f"[{self.node.name}]\tI just mined a new block ", new_block, times)
-                self.update_wallets(new_block)
-                # print("wallets:", self.wallets)
                 times = 0
-                self.transactions = self.transactions[block_size:]
-                # time.sleep(1)
 
-    def blocks_to_string(self):
-        return base64.b64encode(pickle.dumps(self.blocks)).decode()
+    def chain_to_string(self):
+        longest_idx = 0
+        for i in range(len(self.chains)):
+            if len(self.chains[i]) > len(self.chains[longest_idx]):
+                longest_idx = i
+        return base64.b64encode(pickle.dumps(self.chains[longest_idx])).decode()
 
     def block_to_string(self, block):
         return base64.b64encode(pickle.dumps(block)).decode()
 
-    def update_wallets(self, block):
-        for transaction in block.split(magic)[1:-1]:
-            if len(transaction) == 0:
-                continue
-            sender, recipient, amount = transaction.split()
-            amount = float(amount)
-            if sender == "system" or self.wallets.get(sender, 0) >= amount:
-                self.wallets[recipient] = self.wallets.get(recipient, 0) + amount
-                self.wallets[sender] -= amount
-            else:
-                raise Exception(f"Sender ({sender}) has insufficient funds for this transaction.")
+    def valid_chain(self, chain):
+        wallets = {"system": 0.0}
+        for block in chain:
+            for transaction in block.split(magic)[1:-1]:
+                if len(transaction) == 0:
+                    continue
+                sender, recipient, amount = transaction.split()
+                amount = float(amount)
+                if sender == "system" or wallets.get(sender, 0) >= amount:
+                    wallets[recipient] = wallets.get(recipient, 0) + amount
+                    wallets[sender] -= amount
+                else:
+                    raise Exception(f"Sender ({sender}) has insufficient funds for this transaction.")
+        return True
 
     def load_blocks_from_string(self, string):
         new_blocks = pickle.loads(base64.b64decode(string))
-        if len(new_blocks) > len(self.blocks):
-            self.blocks = new_blocks
-            for block in self.blocks:
-                self.update_wallets(block)
+        print(f"[{self.node.name}]\treceived {len(new_blocks)}")
+        longest_length = max(len(chain) for chain in self.chains)
+        if len(new_blocks) >= longest_length - max_len_diff and new_blocks not in self.chains:
+            self.chains.append(new_blocks)
             print(f"[{self.node.name}]\tACCEPT, I'm accepting the new chain as it's longer than mine :P.")
-            # print("wallets:", self.wallets)
-        else:
-            print(f"[{self.node.name}]\tREJECT, It's not longer, I'm keeping mine.", len(new_blocks), len(self.blocks))
-            if new_blocks != self.block_to_string:
-                print(f"[{self.node.name}]\tThey are even different.")
+            return
+        if new_blocks not in self.chains:
+            print(f"[{self.node.name}]\tToo short")
+        elif len(new_blocks) >= longest_length - max_len_diff:
+            print(f"[{self.node.name}]\talready have it, why was the block sent")
         return
-        if len(new_blocks) >= len(self.blocks) and new_blocks[:len(self.blocks)] == self.blocks:
-            self.blocks = new_blocks
-            print(f"[{self.node.name}]\tI'm accepting the new chain as it is longer version of what I already have.")
-        else:
-            print(f"[{self.node.name}]\tThis new chain is bullshit.")
     
     def load_block_from_string(self, string):
         new_block = pickle.loads(base64.b64decode(string))
         prev_hash = new_block.split(magic)[0]
-        if prev_hash == hash(self.blocks[-1]):
-            for transaction in new_block.split(magic)[1:-2]:
-                if transaction in self.transactions:
-                    self.transactions.remove(transaction)
-            self.blocks.append(new_block)
-            self.update_wallets(new_block)
-            self.node.broadcast_new_block(self.block_to_string(new_block))
-            print(f"[{self.node.name}]\tACCEPT, I'm accepting the new block as it is building on what I already have.")
-            # print("wallets:", self.wallets)
-            return True
-        elif new_block == self.blocks[-1]:
-            print(f"[{self.node.name}]\tIDC, I already have this block.")
-            return True
-        else:
-            print(f"[{self.node.name}]\tASKING, I'm asking for more blocks.")
+        self.delete_too_short()
+        for chain in self.chains:
+            if prev_hash == hash(chain[-1]):
+                if self.valid_chain(chain + [new_block]):
+                    chain.append(new_block)
+                self.node.broadcast_new_block(self.block_to_string(new_block))
+                # print(f"[{self.node.name}]\tfits", len(chain))
+                return True
+            elif new_block == chain[-1]:
+                return True
         return False
-        #print(f"[{self.node.name}]\tERROR: This new block is bullshit, ignoring.")
-
-# b1 = Blockchain()
-# b1.blocks = [1, 2, 3]
-# b2 = Blockchain()
-# b2.blocks = [3, 2, 1]
-# print(b1.blocks_to_string())
-# print(b2.blocks_to_string())
-# b2.load_blocks_from_string(b1.blocks_to_string())
-# print(b1.blocks_to_string())
-# print(b2.blocks_to_string())
+    
+    def delete_too_short(self):
+        longest_length = max(len(chain) for chain in self.chains)
+        new_chains = list()
+        for chain in self.chains:
+            if len(chain) >= longest_length - max_len_diff:
+                new_chains.append(chain)
+        self.chains = new_chains

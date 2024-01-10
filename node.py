@@ -1,7 +1,7 @@
 import socket, threading, crypto, base64, blockchain
 
 magic = "$#$#"
-verbose = False
+verbose = True
 packet_size = 16000
 
 class Node:
@@ -109,6 +109,7 @@ class Node:
                         port = p_port
                         break
                 self.lock.release()
+                print(f"[{self.name}]\tasking")
                 self.ask_for_blocks(port)
             
         else:
@@ -116,7 +117,16 @@ class Node:
         peer_socket.close()
     
     def handle_ask_for_blocks(self, packet, peer_socket):
-        self.send_blocks(peer_socket.getsockname()[1])
+        name, _ = packet
+        self.lock.acquire()
+        for peer in self.peers:
+            p_name, _, p_port = peer
+            if p_name == name:
+                port = p_port
+                break
+        self.lock.release()
+        self.send_blocks(port)
+        peer_socket.close()
 
     def handle_send_transaction(self, packet, peer_socket):
         try:
@@ -171,7 +181,7 @@ class Node:
     
     def send_blocks(self, port):
         connecting_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        data = self.chain.blocks_to_string()
+        data = self.chain.chain_to_string()
         packet = [
             "blocks",
             self.name,
